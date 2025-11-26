@@ -1,0 +1,52 @@
+[project]
+name = "smart-fitly-bot"
+version = "0.1.0"
+description = "Backend service for the Smart Fitly Telegram mini app."
+authors = [{ name = "Smart Fitly Team" }]
+requires-python = ">=3.13"
+dependencies = [
+  "fastapi>=0.110.0",
+  "uvicorn[standard]>=0.24.0",
+  "sqlalchemy>=2.0.30",
+  "alembic>=1.13.0",
+  "psycopg[binary]>=3.1.18",
+  "pydantic>=2.6.0",
+  "pydantic-settings>=2.2.1",
+  "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "httpx>=0.25.0",
+  "pytest-asyncio>=0.23.0",
+  "ruff>=0.5.0",
+  "mypy>=1.10.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+  "pytest>=8.0.0",
+  "httpx>=0.25.0",
+  "pytest-asyncio>=0.23.0",
+  "ruff>=0.5.0",
+  "mypy>=1.10.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["backend"]
+
+[tool.mypy]
+python_version = "3.13"
+plugins = []
+strict = false
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_any_unimported = false
+ignore_missing_imports = true
