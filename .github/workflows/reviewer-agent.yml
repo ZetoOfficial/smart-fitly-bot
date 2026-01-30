@@ -120,7 +120,7 @@ jobs:
         continue-on-error: true
 
       - name: Run AI Reviewer
-        uses: ZetoOfficial/coding-agents@v0.0.2
+        uses: ZetoOfficial/coding-agents@v0.0.3
         with:
           mode: review-pr
           pr-number: ${{ github.event.pull_request.number }}
