@@ -87,7 +87,7 @@ jobs:
 
       - name: Apply AI feedback
         if: steps.check-limit.outputs.should_continue == 'true'
-        uses: ZetoOfficial/coding-agents@v0.0.1
+        uses: ZetoOfficial/coding-agents@v0.0.2
         with:
           mode: apply-feedback
           pr-number: ${{ github.event.pull_request.number }}
