@@ -1,0 +1,114 @@
+name: AI Feedback Loop
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  apply-feedback:
+    # Запускается когда бот запрашивает изменения
+    if: |
+      github.event.review.state == 'changes_requested' &&
+      github.event.review.user.type == 'Bot'
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Check iteration limit
+        id: check-limit
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            const iterLabels = labels.filter(l => l.startsWith('agent:iteration-'));
+
+            if (iterLabels.length === 0) {
+              core.setOutput('should_continue', 'true');
+              core.setOutput('iteration', '1');
+              return;
+            }
+
+            const currentIter = Math.max(...iterLabels.map(l =>
+              parseInt(l.replace('agent:iteration-', ''))
+            ));
+
+            const maxIterations = parseInt(process.env.MAX_ITERATIONS || '5');
+
+            if (currentIter >= maxIterations) {
+              core.setOutput('should_continue', 'false');
+              core.setOutput('iteration', currentIter.toString());
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `⚠️ **Достигнут лимит итераций (${maxIterations}).**\n\n` +
+                      `Code Agent выполнил ${maxIterations} попыток без успеха.\n` +
+                      `Требуется ручное вмешательство.\n\n` +
+                      `**Следующие шаги:**\n` +
+                      `1. Просмотрите PR и Issue вручную\n` +
+                      `2. Внесите необходимые исправления\n` +
+                      `3. Удалите метку \`agent:max-iterations\` для продолжения`
+              });
+
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['agent:max-iterations', 'agent:failed']
+              });
+
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: 'agent:in-progress'
+                });
+              } catch (e) {
+                // Метка может не существовать
+              }
+            } else {
+              core.setOutput('should_continue', 'true');
+              core.setOutput('iteration', (currentIter + 1).toString());
+            }
+
+      - name: Checkout PR branch
+        if: steps.check-limit.outputs.should_continue == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Apply AI feedback
+        if: steps.check-limit.outputs.should_continue == 'true'
+        uses: ZetoOfficial/coding-agents@v0.0.1
+        with:
+          mode: apply-feedback
+          pr-number: ${{ github.event.pull_request.number }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Comment on failure
+        if: failure() && steps.check-limit.outputs.should_continue == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ Code Agent не смог применить исправления. Проверьте [логи workflow](${context.payload.repository.html_url}/actions/runs/${context.runId}).`
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['agent:failed']
+            });

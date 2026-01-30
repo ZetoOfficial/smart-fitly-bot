@@ -1,0 +1,137 @@
+name: CI and AI Reviewer
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, master]
+
+jobs:
+  quality-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install ruff black mypy
+
+      - name: Run ruff (linting)
+        run: |
+          mkdir -p ci-reports
+          ruff check backend/ --output-format=json > ci-reports/ruff-report.json || true
+          ruff check backend/ --output-format=github || true
+        continue-on-error: true
+
+      - name: Run black (formatting check)
+        run: |
+          black --check --diff backend/ | tee ci-reports/black-report.txt || true
+        continue-on-error: true
+
+      - name: Run mypy (type checking)
+        run: |
+          mypy backend/ --no-error-summary > ci-reports/mypy-report.json || true
+        continue-on-error: true
+
+      - name: Upload quality reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports
+          path: ci-reports/
+
+  test-and-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install pytest pytest-cov bandit pip-audit
+
+      - name: Run pytest
+        run: |
+          mkdir -p ci-reports
+          pytest backend/tests/ -v \
+            --cov=backend \
+            --cov-report=json:ci-reports/coverage.json \
+            --cov-report=term || true
+        continue-on-error: true
+
+      - name: Run bandit (security)
+        run: |
+          bandit -r backend/ -f json -o ci-reports/bandit-report.json || true
+        continue-on-error: true
+
+      - name: Run pip-audit (dependency vulnerabilities)
+        run: |
+          pip-audit --format=json --output=ci-reports/pip-audit-report.json || true
+        continue-on-error: true
+
+      - name: Upload test and security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-security-reports
+          path: ci-reports/
+
+  ai-review:
+    needs: [quality-checks, test-and-security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download quality reports
+        uses: actions/download-artifact@v4
+        with:
+          name: quality-reports
+          path: ./ci-reports/
+        continue-on-error: true
+
+      - name: Download test/security reports
+        uses: actions/download-artifact@v4
+        with:
+          name: test-security-reports
+          path: ./ci-reports/
+        continue-on-error: true
+
+      - name: Run AI Reviewer
+        uses: ZetoOfficial/coding-agents@v0.0.1
+        with:
+          mode: review-pr
+          pr-number: ${{ github.event.pull_request.number }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          artifact-dir: ./ci-reports/
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review-output
+          path: review-output.json
+          retention-days: 30
