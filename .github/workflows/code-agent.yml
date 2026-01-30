@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Coding Agent
-        uses: ZetoOfficial/coding-agents@v0.0.3
+        uses: ZetoOfficial/coding-agents@v0.0.4
         with:
           mode: process-issue
           issue-number: ${{ github.event.issue.number }}
